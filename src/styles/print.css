@@ -1,0 +1,42 @@
+@media print {
+  /* Ocultar elementos no deseados para impresión */
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Resetear márgenes de página */
+  @page {
+    margin: 15mm;
+    size: A4;
+  }
+
+  body {
+    background-color: white !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* El contenedor principal ocupará todo el ancho disponible */
+  .print-container {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Asegurar que las fuentes y tamaños sean legibles en papel */
+  .print-text-sm {
+    font-size: 10pt !important;
+  }
+  
+  .print-text-base {
+    font-size: 11pt !important;
+  }
+
+  .print-text-lg {
+    font-size: 14pt !important;
+  }
+}

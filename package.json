@@ -25,6 +25,7 @@
   },
   "homepage": "https://github.com/AlvaroGarciaMoreau/facturairez#readme",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "date-fns": "^4.4.0",
     "firebase": "^12.18.0",
     "lucide-react": "^1.41.0",

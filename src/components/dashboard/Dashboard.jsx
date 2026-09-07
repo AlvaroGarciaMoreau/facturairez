@@ -49,7 +49,7 @@ const Dashboard = () => {
 
   const handleSaveInvoice = async (invoiceData) => {
     try {
-      if (editingInvoice) {
+      if (editingInvoice && editingInvoice.id) {
         await updateInvoice(editingInvoice.id, invoiceData);
       } else {
         await addInvoice(invoiceData);

@@ -1,0 +1,16 @@
+{
+  "name": "Facturairez - Gestión de Facturas",
+  "short_name": "Facturairez",
+  "description": "Sistema de facturación con escáner inteligente OCR y sincronización en la nube.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f9fafb",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "logo.jpeg",
+      "sizes": "192x192 512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}

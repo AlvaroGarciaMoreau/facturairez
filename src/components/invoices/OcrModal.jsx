@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, FileText, Upload, AlertCircle, Loader2 } from 'lucide-react';
-import { ocrModel } from '../../services/firebase';
+import { ocrModel } from '../../services/ai';
 import { format } from 'date-fns';
 
 const OcrModal = ({ isOpen, onClose, onDataExtracted }) => {

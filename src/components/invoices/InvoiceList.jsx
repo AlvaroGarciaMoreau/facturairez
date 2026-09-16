@@ -19,7 +19,7 @@ const InvoiceList = ({ invoices, loading, onEdit, onDelete, onView }) => {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="flex flex-col space-y-4">
       {invoices.map((invoice) => (
         <InvoiceCard
           key={invoice.id}

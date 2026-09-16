@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowLeft, Printer } from 'lucide-react';
 import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 import logo from '../../assets/logo.jpeg';
 
 const InvoicePrint = ({ invoice, onClose }) => {
@@ -9,6 +10,32 @@ const InvoicePrint = ({ invoice, onClose }) => {
   };
 
   if (!invoice) return null;
+
+  // Determine header color and text based on type
+  let headerColor = "bg-red-400"; // Default Spain
+  let typeLabel = "España";
+  
+  if (invoice.type === 'europe') {
+    headerColor = "bg-[#43a1f6]"; // Blue
+    typeLabel = "Europa";
+  } else if (invoice.type === 'world') {
+    headerColor = "bg-[#8eb69b]"; // Green
+    typeLabel = "Internacional";
+  }
+
+  const billing = invoice.sameAsShipping ? (invoice.shippingDetails || {}) : invoice.client;
+  const shipping = invoice.shippingDetails || {};
+  const issuer = invoice.issuer || {
+    name: "Edith Pérez Bella",
+    tradeName: "Irez Crochet",
+    taxId: "ES42308938R",
+    address: "Avenida de Molière 4, Apartado N°14013",
+    postalCode: "29004",
+    city: "Málaga",
+    province: "Málaga",
+    country: "España",
+    email: "irezcrochet@gmail.com"
+  };
 
   return (
     <div className="min-h-screen bg-gray-100 py-8 print:py-0 print:bg-white">
@@ -33,47 +60,71 @@ const InvoicePrint = ({ invoice, onClose }) => {
       {/* Contenedor de la Factura DIN-A4 */}
       <div className="max-w-4xl mx-auto bg-white shadow-lg print:shadow-none print-container">
         <div className="p-10 sm:p-16">
-          {/* Cabecera */}
-          <div className="flex justify-between items-start border-b border-gray-200 pb-8 mb-8">
-            <div className="flex-1">
-              <img src={logo} alt="Logo" className="h-20 w-auto mb-4" />
+          {/* Cabecera Tipo Template */}
+          <div className="flex justify-between items-start mb-6">
+            <div className="flex-1 flex items-center">
+              <h1 className="text-3xl font-bold text-gray-800 uppercase tracking-wide mr-2">FACTURA</h1>
+              <span className="text-2xl text-gray-600">{typeLabel}</span>
             </div>
-            <div className="text-right">
-              <h1 className="text-3xl font-light text-gray-900 mb-2 uppercase tracking-wider">Factura</h1>
-              <p className="text-lg font-medium text-gray-900">{invoice.invoiceNumber}</p>
-              {invoice.orderNumber && (
-                <p className="text-sm text-gray-600">Pedido: {invoice.orderNumber}</p>
-              )}
-              <div className="mt-2 text-sm text-gray-500">
-                <p>Fecha de Emisión: {invoice.issueDate ? format(new Date(invoice.issueDate), 'dd/MM/yyyy') : ''}</p>
-                <p>Fecha de Operación: {invoice.supplyDate ? format(new Date(invoice.supplyDate), 'dd/MM/yyyy') : ''}</p>
-              </div>
+            <div className="flex-1 flex justify-center">
+              <img src={logo} alt="Logo" className="h-16 w-auto" />
+            </div>
+            <div className="flex-1 text-right">
+              <p className="text-sm font-bold text-gray-800">Nº de factura</p>
+              <p className="text-xl text-gray-700">
+                {!/^(ES-|EUR-|INT-)/.test(invoice.invoiceNumber) && invoice.invoiceNumber
+                  ? (invoice.type === 'spain' ? 'ES-' : invoice.type === 'europe' ? 'EUR-' : 'INT-') + invoice.invoiceNumber 
+                  : invoice.invoiceNumber}
+              </p>
+            </div>
+          </div>
+
+          {/* Barra de color y fechas */}
+          <div className="flex mb-10 w-full">
+            <div className={`w-1/2 h-16 ${headerColor}`}></div>
+            <div className="w-1/2 h-16 bg-gray-100 flex flex-col justify-center items-end pr-6 text-sm font-medium text-gray-800">
+              <p>Fecha de emisión: {invoice.issueDate ? format(new Date(invoice.issueDate), 'd \'de\' MMMM \'de\' yyyy', { locale: es }) : ''}</p>
+              <p>Fecha de suministro: {invoice.supplyDate ? format(new Date(invoice.supplyDate), 'd \'de\' MMMM \'de\' yyyy', { locale: es }) : ''}</p>
             </div>
           </div>
 
           {/* Entidades */}
-          <div className="grid grid-cols-2 gap-12 mb-12">
+          <div className="grid grid-cols-3 gap-8 mb-12">
             <div>
-              <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Emisor</h2>
-              <div className="text-sm text-gray-900 space-y-1">
-                <p className="font-bold text-base">{invoice.issuer?.name}</p>
-                {invoice.issuer?.tradeName && <p>{invoice.issuer?.tradeName}</p>}
-                <p>NIF: {invoice.issuer?.taxId}</p>
-                <p>{invoice.issuer?.address}</p>
-                <p>{invoice.issuer?.postalCode} {invoice.issuer?.city}</p>
-                <p>{invoice.issuer?.province}, {invoice.issuer?.country}</p>
-                <p>{invoice.issuer?.email}</p>
+              <h2 className="text-sm font-bold text-gray-800 mb-2">Facturar a</h2>
+              <div className="text-sm text-gray-800 space-y-1">
+                <p>{billing?.name}</p>
+                {billing?.taxId && <p>NIF/CIF: {billing?.taxId}</p>}
+                <p>{billing?.address}</p>
+                <p>{billing?.postalCode} {billing?.city}</p>
+                <p>{billing?.province ? `${billing?.province}, ` : ''}{billing?.country}</p>
               </div>
             </div>
             <div>
-              <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Cliente</h2>
-              <div className="text-sm text-gray-900 space-y-1">
-                <p className="font-bold text-base">{invoice.client?.name}</p>
-                {invoice.client?.taxId && <p>CIF/NIF/VAT: {invoice.client?.taxId}</p>}
-                <p>{invoice.client?.address}</p>
-                <p>{invoice.client?.postalCode} {invoice.client?.city}</p>
-                <p>{invoice.client?.province}, {invoice.client?.country}</p>
-                {invoice.client?.email && <p>{invoice.client?.email}</p>}
+              <h2 className="text-sm font-bold text-gray-800 mb-2">Enviar a</h2>
+              <div className="text-sm text-gray-800 space-y-1">
+                {shipping?.isDigital ? (
+                  <p className="font-medium text-gray-600">Producto Digital</p>
+                ) : (
+                  <>
+                    <p>{shipping?.name}</p>
+                    <p>{shipping?.address}</p>
+                    <p>{shipping?.postalCode} {shipping?.city}</p>
+                    <p>{shipping?.province ? `${shipping?.province}, ` : ''}{shipping?.country}</p>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="text-right">
+              <h2 className="text-sm font-bold text-gray-800 mb-2">Comerciante</h2>
+              <div className="text-sm text-gray-800 space-y-1">
+                <p className="font-bold">{issuer.name}</p>
+                {issuer.tradeName && <p>{issuer.tradeName}</p>}
+                <p>NIF/CIF: {issuer.taxId}</p>
+                <p>{issuer.address}</p>
+                <p>{issuer.postalCode} {issuer.city}</p>
+                <p>{issuer.province ? `${issuer.province}, ` : ''}{issuer.country}</p>
+                <p>{issuer.email}</p>
               </div>
             </div>
           </div>
@@ -91,15 +142,23 @@ const InvoicePrint = ({ invoice, onClose }) => {
                 </tr>
               </thead>
               <tbody className="text-sm text-gray-800">
-                {invoice.items?.map((item, i) => (
-                  <tr key={item.id || i} className="border-b border-gray-200">
-                    <td className="py-3 px-2">{item.description}</td>
-                    <td className="py-3 px-2 text-right">{item.quantity}</td>
-                    <td className="py-3 px-2 text-right">€{Number(item.unitPrice).toFixed(2)}</td>
-                    <td className="py-3 px-2 text-right">{invoice.type === 'spain' ? item.vatRate : 0}%</td>
-                    <td className="py-3 px-2 text-right font-medium">€{Number(item.total).toFixed(2)}</td>
-                  </tr>
-                ))}
+                {invoice.items?.map((item, i) => {
+                  const vatRate = invoice.type === 'spain' ? (item.vatRate || 0) : 0;
+                  let baseUnitPrice = parseFloat(item.unitPrice) || 0;
+                  if (invoice.pricesIncludeVat) {
+                    baseUnitPrice = baseUnitPrice / (1 + vatRate / 100);
+                  }
+                  
+                  return (
+                    <tr key={item.id || i} className="border-b border-gray-200">
+                      <td className="py-3 px-2">{item.description}</td>
+                      <td className="py-3 px-2 text-right">{item.quantity}</td>
+                      <td className="py-3 px-2 text-right">{baseUnitPrice.toFixed(2)} €</td>
+                      <td className="py-3 px-2 text-right">{vatRate} %</td>
+                      <td className="py-3 px-2 text-right font-medium">{Number(item.total).toFixed(2)} €</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -129,22 +188,38 @@ const InvoicePrint = ({ invoice, onClose }) => {
               <table className="w-full text-sm">
                 <tbody>
                   <tr className="border-b border-gray-200">
-                    <td className="py-2 text-gray-600 font-medium">Subtotal</td>
-                    <td className="py-2 text-right text-gray-900">€{Number(invoice.subtotal).toFixed(2)}</td>
+                    <td className="py-2 text-gray-800 font-bold">Subtotal</td>
+                    <td className="py-2 text-right text-gray-800">{Number(invoice.subtotal).toFixed(2)} €</td>
                   </tr>
+                  {parseFloat(invoice.discount) > 0 && (
+                    <tr className="border-b border-gray-200">
+                      <td className="py-2 text-gray-800 font-bold">Descuento</td>
+                      <td className="py-2 text-right text-gray-800">-{Number(invoice.discount).toFixed(2)} €</td>
+                    </tr>
+                  )}
+                  {invoice.type === 'spain' ? (
+                    <tr className="border-b border-gray-200">
+                      <td className="py-2 text-gray-800 font-bold">IVA (21%)</td>
+                      <td className="py-2 text-right text-gray-800">{Number(invoice.vatTotal).toFixed(2)} €</td>
+                    </tr>
+                  ) : null}
                   <tr className="border-b border-gray-200">
-                    <td className="py-2 text-gray-600 font-medium">IVA Total</td>
-                    <td className="py-2 text-right text-gray-900">€{Number(invoice.vatTotal).toFixed(2)}</td>
+                    <td className="py-2 text-gray-800 font-bold">Envío</td>
+                    <td className="py-2 text-right text-gray-800">{
+                      invoice.shipping?.cost > 0 
+                        ? `${(invoice.pricesIncludeVat ? invoice.shipping.cost / (1 + (invoice.shipping.vatRate||0)/100) : invoice.shipping.cost).toFixed(2)} €`
+                        : (invoice.shippingDetails?.isDigital ? '0.00 €' : '0.00 €')
+                    }</td>
                   </tr>
                   {invoice.irpfTotal > 0 && (
                     <tr className="border-b border-gray-200">
-                      <td className="py-2 text-gray-600 font-medium">Retención IRPF ({invoice.irpfRate}%)</td>
-                      <td className="py-2 text-right text-red-600">-€{Number(invoice.irpfTotal).toFixed(2)}</td>
+                      <td className="py-2 text-gray-800 font-bold">Retención IRPF ({invoice.irpfRate}%)</td>
+                      <td className="py-2 text-right text-red-600">-{Number(invoice.irpfTotal).toFixed(2)} €</td>
                     </tr>
                   )}
                   <tr>
-                    <td className="py-4 text-base font-bold text-gray-900">Total a Pagar</td>
-                    <td className="py-4 text-right text-xl font-bold text-gray-900">€{Number(invoice.total).toFixed(2)}</td>
+                    <td className="py-4 text-base font-bold text-gray-900">Total</td>
+                    <td className="py-4 text-right text-base font-bold text-gray-900">{Number(invoice.total).toFixed(2)} €</td>
                   </tr>
                 </tbody>
               </table>

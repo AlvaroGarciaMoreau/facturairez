@@ -15,6 +15,7 @@ const defaultIssuer = {
 };
 
 const emptyClient = { name: '', taxId: '', address: '', postalCode: '', city: '', province: '', country: '', email: '' };
+const emptyShipping = { name: '', address: '', postalCode: '', city: '', province: '', country: '', isDigital: false };
 
 const InvoiceModal = ({ isOpen, onClose, onSave, initialData, currentType }) => {
   const [formData, setFormData] = useState({
@@ -25,11 +26,15 @@ const InvoiceModal = ({ isOpen, onClose, onSave, initialData, currentType }) => 
     supplyDate: format(new Date(), 'yyyy-MM-dd'),
     issuer: { ...defaultIssuer },
     client: { ...emptyClient },
+    shippingDetails: { ...emptyShipping },
+    sameAsShipping: false,
+    pricesIncludeVat: true,
     items: [],
     shipping: { cost: 0, vatRate: 21 },
     irpfRate: 0,
     status: 'issued',
-    notes: ''
+    notes: '',
+    discount: 0
   });
 
   useEffect(() => {
@@ -45,7 +50,17 @@ const InvoiceModal = ({ isOpen, onClose, onSave, initialData, currentType }) => 
     if (section) {
       setFormData(prev => ({ ...prev, [section]: { ...prev[section], [name]: value } }));
     } else {
-      setFormData(prev => ({ ...prev, [name]: value }));
+      setFormData(prev => {
+        const updates = { [name]: value };
+        if (name === 'type') {
+          const currentNum = prev.invoiceNumber.replace(/^(ES-|EUR-|INT-)/, '');
+          const newPrefix = value === 'spain' ? 'ES-' : value === 'europe' ? 'EUR-' : 'INT-';
+          if (prev.invoiceNumber || currentNum) {
+            updates.invoiceNumber = newPrefix + currentNum;
+          }
+        }
+        return { ...prev, ...updates };
+      });
     }
   };
 
@@ -56,14 +71,37 @@ const InvoiceModal = ({ isOpen, onClose, onSave, initialData, currentType }) => 
     newItems[index] = { ...newItems[index], [field]: value };
     
     // Auto calculate line total
-    if (field === 'quantity' || field === 'unitPrice') {
+    if (['quantity', 'unitPrice', 'vatRate'].includes(field)) {
       const qty = field === 'quantity' ? valNum : parseFloat(newItems[index].quantity) || 0;
       const price = field === 'unitPrice' ? valNum : parseFloat(newItems[index].unitPrice) || 0;
-      newItems[index].total = qty * price;
+      const vat = field === 'vatRate' ? valNum : parseFloat(newItems[index].vatRate) || 0;
+      
+      let basePrice = price;
+      if (formData.pricesIncludeVat) {
+        basePrice = price / (1 + vat / 100);
+      }
+      newItems[index].total = qty * basePrice;
     }
     
     setFormData(prev => ({ ...prev, items: newItems }));
   };
+
+  useEffect(() => {
+    // Recalculate item totals when pricesIncludeVat changes
+    setFormData(prev => {
+      const newItems = prev.items.map(item => {
+        const qty = parseFloat(item.quantity) || 0;
+        const price = parseFloat(item.unitPrice) || 0;
+        const vat = parseFloat(item.vatRate) || 0;
+        let basePrice = price;
+        if (prev.pricesIncludeVat) {
+          basePrice = price / (1 + vat / 100);
+        }
+        return { ...item, total: qty * basePrice };
+      });
+      return { ...prev, items: newItems };
+    });
+  }, [formData.pricesIncludeVat]);
 
   const addItem = () => {
     setFormData(prev => ({
@@ -87,16 +125,35 @@ const InvoiceModal = ({ isOpen, onClose, onSave, initialData, currentType }) => 
       vatTotal += item.total * ((parseFloat(item.vatRate) || 0) / 100);
     });
 
-    const shippingCost = parseFloat(formData.shipping.cost) || 0;
-    if (shippingCost > 0) {
-      subtotal += shippingCost;
-      vatTotal += shippingCost * ((parseFloat(formData.shipping.vatRate) || 0) / 100);
+    let shippingCostBase = parseFloat(formData.shipping.cost) || 0;
+    const shippingVatRate = parseFloat(formData.shipping.vatRate) || 0;
+    
+    if (formData.pricesIncludeVat) {
+      shippingCostBase = shippingCostBase / (1 + shippingVatRate / 100);
+    }
+
+    if (shippingCostBase > 0) {
+      subtotal += shippingCostBase;
+      vatTotal += shippingCostBase * (shippingVatRate / 100);
+    }
+
+    let discountBase = parseFloat(formData.discount) || 0;
+    let discountVat = 0;
+    if (discountBase > 0) {
+      // If there is VAT, assume the discount is proportional to the overall VAT
+      const averageVatRate = subtotal > 0 ? (vatTotal / subtotal) : 0;
+      if (formData.pricesIncludeVat) {
+         discountBase = discountBase / (1 + averageVatRate);
+      }
+      discountVat = discountBase * averageVatRate;
+      subtotal -= discountBase;
+      vatTotal -= discountVat;
     }
 
     const irpfTotal = subtotal * ((parseFloat(formData.irpfRate) || 0) / 100);
     const total = subtotal + vatTotal - irpfTotal;
 
-    return { subtotal, vatTotal, irpfTotal, total };
+    return { subtotal, vatTotal, irpfTotal, total, discountBase, discountVat };
   };
 
   const handleSubmit = (e) => {
@@ -140,7 +197,22 @@ const InvoiceModal = ({ isOpen, onClose, onSave, initialData, currentType }) => 
                 
                 <div className="sm:col-span-2">
                   <label className="block text-sm font-medium text-gray-700">Número de Factura</label>
-                  <input type="text" required name="invoiceNumber" value={formData.invoiceNumber} onChange={handleChange} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+                  <div className="mt-1 flex rounded-md shadow-sm">
+                    <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm">
+                      {formData.type === 'spain' ? 'ES-' : formData.type === 'europe' ? 'EUR-' : 'INT-'}
+                    </span>
+                    <input type="text" required name="invoiceNumber" value={formData.invoiceNumber.replace(/^(ES-|EUR-|INT-)/, '')} onChange={(e) => {
+                       const prefix = formData.type === 'spain' ? 'ES-' : formData.type === 'europe' ? 'EUR-' : 'INT-';
+                       handleChange({ target: { name: 'invoiceNumber', value: prefix + e.target.value } });
+                    }} className="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md border border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+                  </div>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <div className="flex items-center mt-6">
+                    <input type="checkbox" name="pricesIncludeVat" checked={formData.pricesIncludeVat} onChange={(e) => handleChange({ target: { name: 'pricesIncludeVat', value: e.target.checked } })} className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
+                    <label className="ml-2 block text-sm text-gray-900">Precios introducidos incluyen IVA</label>
+                  </div>
                 </div>
 
                 <div className="sm:col-span-2">
@@ -169,33 +241,78 @@ const InvoiceModal = ({ isOpen, onClose, onSave, initialData, currentType }) => 
               </div>
 
               <div className="mt-8 border-t border-gray-200 pt-6">
-                <h4 className="text-lg font-medium text-gray-900 mb-4">Datos del Cliente</h4>
-                <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
-                  <div className="sm:col-span-3">
-                    <label className="block text-sm font-medium text-gray-700">Nombre / Razón Social</label>
-                    <input type="text" required name="name" value={formData.client.name} onChange={(e) => handleChange(e, 'client')} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
-                  </div>
-                  <div className="sm:col-span-3">
-                    <label className="block text-sm font-medium text-gray-700">NIF / CIF / VAT ID</label>
-                    <input type="text" name="taxId" value={formData.client.taxId} onChange={(e) => handleChange(e, 'client')} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
-                  </div>
-                  <div className="sm:col-span-6">
-                    <label className="block text-sm font-medium text-gray-700">Dirección</label>
-                    <input type="text" required name="address" value={formData.client.address} onChange={(e) => handleChange(e, 'client')} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700">Código Postal</label>
-                    <input type="text" required name="postalCode" value={formData.client.postalCode} onChange={(e) => handleChange(e, 'client')} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700">Ciudad</label>
-                    <input type="text" required name="city" value={formData.client.city} onChange={(e) => handleChange(e, 'client')} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700">País</label>
-                    <input type="text" required name="country" value={formData.client.country} onChange={(e) => handleChange(e, 'client')} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+                <h4 className="text-lg font-medium text-gray-900 mb-4">Datos de Envío (Enviar a)</h4>
+                
+                <div className="mb-4">
+                  <div className="flex items-center">
+                    <input type="checkbox" name="isDigital" checked={formData.shippingDetails?.isDigital} onChange={(e) => handleChange({ target: { name: 'isDigital', value: e.target.checked } }, 'shippingDetails')} className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
+                    <label className="ml-2 block text-sm text-gray-900">Es un Producto Digital (no requiere envío físico)</label>
                   </div>
                 </div>
+
+                {!formData.shippingDetails?.isDigital && (
+                  <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
+                    <div className="sm:col-span-6">
+                      <label className="block text-sm font-medium text-gray-700">Nombre del destinatario</label>
+                      <input type="text" name="name" value={formData.shippingDetails?.name || ''} onChange={(e) => handleChange(e, 'shippingDetails')} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+                    </div>
+                    <div className="sm:col-span-6">
+                      <label className="block text-sm font-medium text-gray-700">Dirección</label>
+                      <input type="text" name="address" value={formData.shippingDetails?.address || ''} onChange={(e) => handleChange(e, 'shippingDetails')} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700">Código Postal</label>
+                      <input type="text" name="postalCode" value={formData.shippingDetails?.postalCode || ''} onChange={(e) => handleChange(e, 'shippingDetails')} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700">Ciudad</label>
+                      <input type="text" name="city" value={formData.shippingDetails?.city || ''} onChange={(e) => handleChange(e, 'shippingDetails')} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700">País</label>
+                      <input type="text" name="country" value={formData.shippingDetails?.country || ''} onChange={(e) => handleChange(e, 'shippingDetails')} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-8 border-t border-gray-200 pt-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h4 className="text-lg font-medium text-gray-900">Datos de Facturación (Facturar a)</h4>
+                  <div className="flex items-center">
+                    <input type="checkbox" name="sameAsShipping" checked={formData.sameAsShipping} onChange={(e) => handleChange({ target: { name: 'sameAsShipping', value: e.target.checked } })} className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
+                    <label className="ml-2 block text-sm text-gray-900">Igual que la dirección de envío</label>
+                  </div>
+                </div>
+                
+                {!formData.sameAsShipping && (
+                  <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
+                    <div className="sm:col-span-3">
+                      <label className="block text-sm font-medium text-gray-700">Nombre / Razón Social</label>
+                      <input type="text" required name="name" value={formData.client.name} onChange={(e) => handleChange(e, 'client')} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+                    </div>
+                    <div className="sm:col-span-3">
+                      <label className="block text-sm font-medium text-gray-700">NIF / CIF / VAT ID</label>
+                      <input type="text" name="taxId" value={formData.client.taxId} onChange={(e) => handleChange(e, 'client')} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+                    </div>
+                    <div className="sm:col-span-6">
+                      <label className="block text-sm font-medium text-gray-700">Dirección</label>
+                      <input type="text" required name="address" value={formData.client.address} onChange={(e) => handleChange(e, 'client')} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700">Código Postal</label>
+                      <input type="text" required name="postalCode" value={formData.client.postalCode} onChange={(e) => handleChange(e, 'client')} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700">Ciudad</label>
+                      <input type="text" required name="city" value={formData.client.city} onChange={(e) => handleChange(e, 'client')} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700">País</label>
+                      <input type="text" required name="country" value={formData.client.country} onChange={(e) => handleChange(e, 'client')} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="mt-8 border-t border-gray-200 pt-6">
@@ -258,6 +375,10 @@ const InvoiceModal = ({ isOpen, onClose, onSave, initialData, currentType }) => 
                       </div>
                     )}
                     <div>
+                      <label className="block text-sm font-medium text-gray-700">Descuento Global</label>
+                      <input type="number" min="0" step="0.01" name="discount" value={formData.discount} onChange={handleChange} className="mt-1 block w-32 border border-gray-300 rounded-md shadow-sm py-2 px-3 sm:text-sm" />
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium text-gray-700">Notas / Comentarios (opcional)</label>
                       <textarea name="notes" rows={2} value={formData.notes} onChange={handleChange} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 sm:text-sm" />
                     </div>
@@ -273,6 +394,12 @@ const InvoiceModal = ({ isOpen, onClose, onSave, initialData, currentType }) => 
                         <dt>IVA Total</dt>
                         <dd className="font-medium">€{totals.vatTotal.toFixed(2)}</dd>
                       </div>
+                      {parseFloat(formData.discount) > 0 && (
+                        <div className="flex justify-between text-red-600">
+                          <dt>Descuento</dt>
+                          <dd className="font-medium">-€{parseFloat(formData.discount).toFixed(2)}</dd>
+                        </div>
+                      )}
                       {totals.irpfTotal > 0 && (
                         <div className="flex justify-between text-red-600">
                           <dt>Retención IRPF</dt>

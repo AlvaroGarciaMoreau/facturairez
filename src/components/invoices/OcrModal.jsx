@@ -65,13 +65,49 @@ const OcrModal = ({ isOpen, onClose, onDataExtracted }) => {
     try {
       const base64Data = await fileToBase64(file);
       
-      const prompt = `Analiza este documento PDF de pedido/factura y extrae los datos requeridos en formato JSON estructurado. 
-      Instrucciones importantes:
-      1. Extrae el número de pedido (orderNumber) si aparece.
-      2. Extrae los datos del cliente: nombre, dirección, código postal, ciudad, país. Extrae el NIF/CIF si existe.
-      3. Extrae todos los artículos comprados (description, quantity, unitPrice). El vatRate configúralo a ${type === 'spain' ? '21' : '0'}.
-      4. Extrae los gastos de envío (shipping cost) si existen.
-      Devuelve un JSON estrictamente basado en el esquema configurado.`;
+      const prompt = `Analiza este documento PDF de pedido o factura (ej. Shopify) y extrae los datos.
+      DEBES devolver los datos EXCLUSIVAMENTE en un objeto JSON que siga exactamente esta estructura:
+      {
+        "orderNumber": "#1100",
+        "invoiceNumber": null,
+        "date": "2026-05-09",
+        "shippingDetails": {
+          "name": "Nombre completo",
+          "address": "Calle y número",
+          "postalCode": "Código postal",
+          "city": "Ciudad",
+          "province": "Provincia o región",
+          "country": "País"
+        },
+        "billingDetails": {
+          "name": "Nombre de facturación",
+          "taxId": "NIF/CIF si aparece",
+          "address": "Calle y número",
+          "postalCode": "Código postal",
+          "city": "Ciudad",
+          "province": "Provincia",
+          "country": "País"
+        },
+        "sameAsShipping": true,
+        "items": [
+          {
+            "description": "Nombre del producto",
+            "quantity": 1,
+            "unitPrice": 10.50,
+            "vatRate": 21
+          }
+        ],
+        "shippingCost": 4.50,
+        "globalVatRate": 21,
+        "discount": 3.00
+      }
+      
+      Importante:
+      1. Si no encuentras un dato, pon null.
+      2. Extrae las direcciones buscando "Dirección de envío" y "Dirección de facturación".
+      3. Asegúrate de convertir la fecha de texto (ej. "9 de mayo de 2026") al formato YYYY-MM-DD.
+      4. Extrae los números de precios y descuentos sin el símbolo de euro y como números reales.
+      Responde SOLO con el JSON válido, sin usar formato markdown.`;
 
       const result = await ocrModel.generateContent([
         prompt,
@@ -83,38 +119,92 @@ const OcrModal = ({ isOpen, onClose, onDataExtracted }) => {
         }
       ]);
       
-      const responseText = result.response.text();
+      let responseText = result.response.text();
+      // Limpiar texto por si el LLM devuelve markdown
+      responseText = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
       const extractedData = JSON.parse(responseText);
+
+      const today = format(new Date(), 'yyyy-MM-dd');
+      // Validar que la fecha devuelta tenga formato YYYY-MM-DD
+      let parsedDate = today;
+      if (extractedData.date) {
+        if (/^\\d{4}-\\d{2}-\\d{2}$/.test(extractedData.date)) {
+          parsedDate = extractedData.date;
+        } else {
+          // Fallback para fechas españolas si Gemini no hizo la conversión
+          const esMatch = extractedData.date.match(/(\\d{1,2})\\s*de\\s*([a-zA-Z]+)\\s*(?:de|del)\\s*(\\d{4})/i) || extractedData.date.match(/(\\d{1,2})\\s*([a-zA-Z]+)\\s*(\\d{4})/i);
+          if (esMatch) {
+            const months = { enero: '01', febrero: '02', marzo: '03', abril: '04', mayo: '05', junio: '06', julio: '07', agosto: '08', septiembre: '09', oct: '10', octubre: '10', noviembre: '11', dic: '12', diciembre: '12', sep: '09', may: '05' };
+            const monthStr = esMatch[2].toLowerCase();
+            const month = months[monthStr] || '01';
+            const day = esMatch[1].padStart(2, '0');
+            const year = esMatch[3];
+            parsedDate = `${year}-${month}-${day}`;
+          } else {
+            const match = extractedData.date.match(/(\\d{4}-\\d{2}-\\d{2})/);
+            if (match) parsedDate = match[1];
+          }
+        }
+      }
+
+      const rawShipping = extractedData.shippingDetails || {};
+      const rawBilling = extractedData.billingDetails || {};
+      
+      const hasData = (obj) => obj && Object.values(obj).some(val => val !== null && val !== '');
+      
+      const shippingInfo = hasData(rawShipping) ? rawShipping : (hasData(rawBilling) ? rawBilling : {});
+      const billingInfo = hasData(rawBilling) ? rawBilling : (hasData(rawShipping) ? rawShipping : {});
+      const sameAsShipping = extractedData.sameAsShipping || JSON.stringify(shippingInfo) === JSON.stringify(billingInfo);
+
+      // Limpiar y formatear el número de factura
+      let extractedInvoiceNumber = extractedData.invoiceNumber || '';
+      extractedInvoiceNumber = extractedInvoiceNumber.replace(/^INV-/i, '');
+      if (extractedInvoiceNumber && !/^(ES-|EUR-|INT-)/.test(extractedInvoiceNumber)) {
+        if (type === 'spain') extractedInvoiceNumber = 'ES-' + extractedInvoiceNumber;
+        else if (type === 'europe') extractedInvoiceNumber = 'EUR-' + extractedInvoiceNumber;
+        else extractedInvoiceNumber = 'INT-' + extractedInvoiceNumber;
+      }
 
       // Pre-fill some default structure required by our InvoiceModal
       const structuredData = {
         type,
-        invoiceNumber: '',
+        invoiceNumber: extractedInvoiceNumber,
         orderNumber: extractedData.orderNumber || '',
-        issueDate: format(new Date(), 'yyyy-MM-dd'),
-        supplyDate: format(new Date(), 'yyyy-MM-dd'),
+        issueDate: parsedDate,
+        supplyDate: parsedDate,
+        sameAsShipping: sameAsShipping,
         client: {
-          name: extractedData.client?.name || '',
-          taxId: extractedData.client?.taxId || '',
-          address: extractedData.client?.address || '',
-          postalCode: extractedData.client?.postalCode || '',
-          city: extractedData.client?.city || '',
-          province: extractedData.client?.province || '',
-          country: extractedData.client?.country || '',
-          email: extractedData.client?.email || ''
+          name: billingInfo.name || shippingInfo.name || '',
+          taxId: billingInfo.taxId || extractedData.taxId || '',
+          address: billingInfo.address || shippingInfo.address || '',
+          postalCode: billingInfo.postalCode || shippingInfo.postalCode || '',
+          city: billingInfo.city || shippingInfo.city || '',
+          province: billingInfo.province || shippingInfo.province || '',
+          country: billingInfo.country || shippingInfo.country || '',
+          email: billingInfo.email || shippingInfo.email || ''
+        },
+        shippingDetails: {
+          name: shippingInfo.name || '',
+          address: shippingInfo.address || '',
+          postalCode: shippingInfo.postalCode || '',
+          city: shippingInfo.city || '',
+          province: shippingInfo.province || '',
+          country: shippingInfo.country || '',
+          isDigital: false
         },
         items: (extractedData.items || []).map((item, index) => ({
           id: Date.now().toString() + index,
           description: item.description || '',
           quantity: item.quantity || 1,
           unitPrice: item.unitPrice || 0,
-          vatRate: item.vatRate !== undefined ? item.vatRate : (type === 'spain' ? 21 : 0),
+          vatRate: (item.vatRate !== undefined && item.vatRate !== null) ? item.vatRate : ((extractedData.globalVatRate !== undefined && extractedData.globalVatRate !== null) ? extractedData.globalVatRate : (type === 'spain' ? 21 : 0)),
           total: (item.quantity || 1) * (item.unitPrice || 0)
         })),
         shipping: {
-          cost: extractedData.shipping?.cost || 0,
-          vatRate: extractedData.shipping?.vatRate !== undefined ? extractedData.shipping?.vatRate : (type === 'spain' ? 21 : 0)
-        }
+          cost: extractedData.shippingCost || extractedData.shipping?.cost || 0,
+          vatRate: (extractedData.globalVatRate !== undefined && extractedData.globalVatRate !== null) ? extractedData.globalVatRate : (type === 'spain' ? 21 : 0)
+        },
+        discount: extractedData.discount || 0
       };
 
       onDataExtracted(structuredData);

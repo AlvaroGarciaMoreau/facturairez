@@ -7,38 +7,50 @@ const invoiceSchema = {
   type: SchemaType.OBJECT,
   properties: {
     orderNumber: { type: SchemaType.STRING, nullable: true },
-    client: {
+    invoiceNumber: { type: SchemaType.STRING, nullable: true },
+    date: { type: SchemaType.STRING, nullable: true },
+    shippingDetails: {
       type: SchemaType.OBJECT,
+      nullable: true,
       properties: {
-        name: { type: SchemaType.STRING },
-        taxId: { type: SchemaType.STRING, nullable: true },
-        address: { type: SchemaType.STRING },
-        postalCode: { type: SchemaType.STRING },
-        city: { type: SchemaType.STRING },
-        province: { type: SchemaType.STRING },
-        country: { type: SchemaType.STRING },
-        email: { type: SchemaType.STRING, nullable: true }
+        name: { type: SchemaType.STRING, nullable: true },
+        address: { type: SchemaType.STRING, nullable: true },
+        postalCode: { type: SchemaType.STRING, nullable: true },
+        city: { type: SchemaType.STRING, nullable: true },
+        province: { type: SchemaType.STRING, nullable: true },
+        country: { type: SchemaType.STRING, nullable: true }
       }
     },
+    billingDetails: {
+      type: SchemaType.OBJECT,
+      nullable: true,
+      properties: {
+        name: { type: SchemaType.STRING, nullable: true },
+        taxId: { type: SchemaType.STRING, nullable: true },
+        address: { type: SchemaType.STRING, nullable: true },
+        postalCode: { type: SchemaType.STRING, nullable: true },
+        city: { type: SchemaType.STRING, nullable: true },
+        province: { type: SchemaType.STRING, nullable: true },
+        country: { type: SchemaType.STRING, nullable: true }
+      }
+    },
+    sameAsShipping: { type: SchemaType.BOOLEAN, nullable: true },
     items: {
       type: SchemaType.ARRAY,
+      nullable: true,
       items: {
         type: SchemaType.OBJECT,
         properties: {
-          description: { type: SchemaType.STRING },
-          quantity: { type: SchemaType.NUMBER },
-          unitPrice: { type: SchemaType.NUMBER },
-          vatRate: { type: SchemaType.NUMBER }
+          description: { type: SchemaType.STRING, nullable: true },
+          quantity: { type: SchemaType.NUMBER, nullable: true },
+          unitPrice: { type: SchemaType.NUMBER, nullable: true },
+          vatRate: { type: SchemaType.NUMBER, nullable: true }
         }
       }
     },
-    shipping: {
-      type: SchemaType.OBJECT,
-      properties: {
-        cost: { type: SchemaType.NUMBER },
-        vatRate: { type: SchemaType.NUMBER }
-      }
-    }
+    shippingCost: { type: SchemaType.NUMBER, nullable: true },
+    globalVatRate: { type: SchemaType.NUMBER, nullable: true },
+    discount: { type: SchemaType.NUMBER, nullable: true }
   }
 };
 
